@@ -1,0 +1,102 @@
+import pandas as pd
+from sklearn.model_selection import LeaveOneOut
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+import numpy as np
+
+# Load the data from the Excel file
+path = "/content/UCP.xlsx"
+df = pd.read_excel(path)
+
+# Define features (X) and target (y)
+X = df.drop(columns=['Project_No', 'UUCP', 'UCP'])
+y = df['UCP']
+
+# Define the objective function (MSE and MAE)
+def objective_function(n_neighbors, leaf_size):
+    # Initialize the KNN regressor
+    knn = KNeighborsRegressor(n_neighbors=n_neighbors, leaf_size=leaf_size)
+
+    # Initialize Leave-One-Out Cross-Validation
+    loo = LeaveOneOut()
+
+    # Arrays to store the scores
+    mse_scores = []
+    mae_scores = []
+
+    for train_index, test_index in loo.split(X):
+        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+
+        knn.fit(X_train, y_train)
+        y_pred = knn.predict(X_test)
+
+        mse_scores.append(mean_squared_error(y_test, y_pred))
+        mae_scores.append(mean_absolute_error(y_test, y_pred))
+
+    # Calculate the mean of the scores
+    mse = np.mean(mse_scores)
+    mae = np.mean(mae_scores)
+
+    return mse, mae
+
+# Define the chaotic logistic function
+def chaotic(value):
+    return 4 * value * (1 - value)
+
+# Define the Firefly Algorithm
+def firefly_algorithm(obj_func, n_neighbors_range, leaf_size_range, num_fireflies=30, max_gen=5, alpha=0.2, beta0=1.0, gamma=1.0):
+    # Initialize fireflies randomly
+    fireflies = np.random.randint(low=[n_neighbors_range[0], leaf_size_range[0]], high=[n_neighbors_range[1], leaf_size_range[1]], size=(num_fireflies, 2))
+
+    # Initialize the best solution and its value
+    best_solution = fireflies[0]
+    best_value = obj_func(*best_solution)
+    cache = {tuple(fireflies[0]): best_value}
+
+    beta_chaotic = beta0
+    gamma_chaotic = gamma
+
+    # Start optimization
+    for gen in range(max_gen):
+        # Update chaotic beta and gamma
+        beta_chaotic = chaotic(beta_chaotic)
+        gamma_chaotic = chaotic(gamma_chaotic)
+
+        for i, f1 in enumerate(fireflies):
+            for j, f2 in enumerate(fireflies):
+                if tuple(f2) not in cache:
+                    cache[tuple(f2)] = obj_func(*f2)
+                if tuple(f1) not in cache:
+                    cache[tuple(f1)] = obj_func(*f1)
+
+                if cache[tuple(f2)][0] < cache[tuple(f1)][0]:  # Compare based on MSE
+                    r = np.linalg.norm(f1 - f2)
+                    beta = beta_chaotic * np.exp(-gamma_chaotic * r ** 2)
+                    fireflies[i] = fireflies[i] + alpha * (f2 - f1) + beta * (np.random.rand(2) - 0.5)
+                    fireflies[i][0] = np.clip(fireflies[i][0], n_neighbors_range[0], n_neighbors_range[1])
+                    fireflies[i][1] = np.clip(fireflies[i][1], leaf_size_range[0], leaf_size_range[1])
+
+        # Update the best solution
+        for f in fireflies:
+            value = obj_func(*f)
+            cache[tuple(f)] = value
+            if value[0] < best_value[0]:  # Compare based on MSE
+                best_solution = f
+                best_value = value
+
+    return best_solution, best_value
+
+# Define the search ranges for parameters
+n_neighbors_range = (1, 10)  # Range for n_neighbors
+leaf_size_range = (10, 100)  # Range for leaf_size
+
+# Run the Firefly Algorithm multiple times
+for i in range(30):
+    # Run the Firefly Algorithm
+    best_solution, best_value = firefly_algorithm(objective_function, n_neighbors_range, leaf_size_range)
+
+    # Print the optimal solution
+    print(i)
+    print("Optimal Solution (n_neighbors, leaf_size):", best_solution)
+    print("Optimal Value (MSE, MAE):", best_value)
